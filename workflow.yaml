@@ -1,0 +1,37 @@
+name: Auto Translation CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "*.md"
+env:
+  MODEL_NAME: "claude-3-5-sonnet-20240620"
+  MAX_OUTPUT_TOKEN: 4096
+  MAX_ITERATIONS: 10
+  TARGET_LANGUAGE: "japanese"
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  ORIGINAL_GLOB: "./*.md"
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+      - name: translate
+        run: >
+          deno run --allow-read --allow-write --allow-env --allow-net 
+          https://raw.githubusercontent.com/inaridiy/translate-script/main/main.ts
+      - name: push changes
+        run: |
+          git remote set-url origin https://github-actions:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          if (git diff --shortstat | grep '[0-9]'); then \
+            git add .; \
+            git commit -m "Push Translation"; \
+            git push origin HEAD:${GITHUB_REF}; \
+          fi

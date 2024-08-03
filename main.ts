@@ -1,4 +1,8 @@
 import Anthropic from "npm:@anthropic-ai/sdk";
+import {
+  expandGlob,
+  WalkEntry,
+} from "https://deno.land/std@0.224.0/fs/expand_glob.ts";
 import { sha256 } from "https://denopkg.com/chiefbiiko/sha256@v1.0.0/mod.ts";
 
 const MODEL_NAME = Deno.env.get("ANTHROPIC_MODEL_NAME") ??
@@ -9,7 +13,7 @@ const MAX_OUTPUT_TOKEN = Number(
 const MAX_ITERATIONS = Number(Deno.env.get("MAX_ITERATIONS") ?? 10);
 const TARGET_LANGUAGE = Deno.env.get("TARGET_LANGUAGE") ?? "japanese";
 const API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-const ORIGINAL_DIR = Deno.env.get("ORIGINAL_DIR") ?? "./";
+const ORIGINAL_GLOB = Deno.env.get("ORIGINAL_GLOB") ?? "./*.md";
 
 const TRANSLATTE_PROMPT =
   `You are tasked with translating a technical Markdown document from English to a specified target language. Your goal is to produce an accurate and natural-sounding translation while preserving the original Markdown formatting and technical terminology.
@@ -46,14 +50,17 @@ Please provide your translation inside <translated_document> tags. Ensure that t
 const anthropic = new Anthropic({ apiKey: API_KEY });
 Deno.mkdirSync(`./${TARGET_LANGUAGE}`, { recursive: true });
 
-const files = Array.from(Deno.readDirSync(ORIGINAL_DIR))
-  .map((file) => file.name)
-  .filter((file) => file.endsWith(".md"));
+const entries: WalkEntry[] = [];
 
-for (const file of files) {
-  const savePath = `./${TARGET_LANGUAGE}/${file}`;
+for await (const entry of expandGlob(ORIGINAL_GLOB)) {
+  if (!entry.isFile) continue;
+  entries.push(entry);
+}
+
+for (const entry of entries) {
+  const savePath = `./${TARGET_LANGUAGE}/${entry.name}`;
   const existing = safeReadTextFileSync(savePath);
-  const markdown = Deno.readTextFileSync(file);
+  const markdown = Deno.readTextFileSync(entry.path);
   const hash = sha256(markdown, "utf8", "hex");
 
   if (existing) {
@@ -61,12 +68,12 @@ for (const file of files) {
     const existingHash = existingMeta.split(":")[1].trim();
 
     if (hash === existingHash) {
-      console.log(`Skipping ${file} as it has already been translated.`);
+      console.log(`Skipping ${entry.name} as it has already been translated.`);
       continue;
     }
   }
 
-  console.log(`Translating ${file}...`);
+  console.log(`Translating ${entry.name}...`);
   const translation = await translateMarkdown(
     anthropic,
     TARGET_LANGUAGE,
